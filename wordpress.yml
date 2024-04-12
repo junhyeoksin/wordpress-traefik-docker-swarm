@@ -1,0 +1,133 @@
+version: '3.8'
+
+x-default-opts:
+  &default-opts
+  logging:
+    options:
+      max-size: "10m"
+
+networks:
+  wordpress-network:
+    driver: overlay
+  traefik-network:
+    external: true
+
+
+volumes:
+  mysql-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /volumes/db
+  wordpress-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /volumes/word
+
+
+
+secrets:
+  wordpress-mysql-root-password:
+    external: true
+  wordpress-database-password:
+    external: true
+
+services:
+  mysql:
+    <<: *default-opts
+    # Image tag (replace with yours)
+    image: mysql:8
+    volumes:
+      - mysql-data:/var/lib/mysql
+    environment:
+      # Database name (replace with yours)
+      MYSQL_DATABASE: wordpressdb
+      # Database user (replace with yours)
+      MYSQL_USER: wordpressdbuser
+      # Database password (replace with yours)
+      MYSQL_PASSWORD_FILE: /run/secrets/wordpress-database-password
+      # MySQL root password (replace with yours)
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/wordpress-mysql-root-password
+    networks:
+      - wordpress-network
+    secrets:
+      - wordpress-mysql-root-password
+      - wordpress-database-password
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      # Container resources (replace with yours)
+      resources:
+        limits:
+          cpus: '0.55'
+          memory: 1G
+        reservations:
+          cpus: '0.35'
+          memory: 512M
+
+  wordpress:
+    <<: *default-opts
+    image: wordpress:latest
+    volumes:
+      - wordpress-data:/var/www/html
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      # Database name (replace with yours)
+      WORDPRESS_DB_NAME: wordpressdb
+      # Database user (replace with yours)
+      WORDPRESS_DB_USER: wordpressdbuser
+      # Database password (replace with yours)
+      WORDPRESS_DB_PASSWORD_FILE: /run/secrets/wordpress-database-password
+    networks:
+      - wordpress-network
+      - traefik-network
+    secrets:
+      - wordpress-database-password
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      # Container resources (replace with yours)
+      resources:
+        limits:
+          cpus: '0.55'
+          memory: 1G
+        reservations:
+          cpus: '0.35'
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        # WordPress URL (replace with yours)
+        - "traefik.http.routers.wordpress.rule=Host(`your.domain`)"
+
+        - "traefik.http.routers.wordpress.service=wordpress"
+        - "traefik.http.routers.wordpress.entrypoints=websecure"
+        - "traefik.http.services.wordpress.loadbalancer.server.port=80"
+        - "traefik.http.routers.wordpress.tls=true"
+        - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
+        - "traefik.http.services.wordpress.loadbalancer.passhostheader=true"
+        - "traefik.http.routers.wordpress.middlewares=compresstraefik"
+        - "traefik.http.middlewares.compresstraefik.compress=true"
+
+    depends_on:
+      - mysql
