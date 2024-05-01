@@ -16,4 +16,4 @@
 
 #### Deploy WordPress in a Docker Swarm using the command:
 
-#### <pre><code> docker stack deploy -c wordpress-traefik-letsencrypt-docker-swarm.yml wordpress</code></pre> 
+#### <pre><code> docker stack deploy -c wordpress.yml wordpress</code></pre> 
